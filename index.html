@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download Stats</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0d1014;--panel:#151a21;--line:#262e39;--text:#e6edf3;--dim:#8b96a3;--accent:#4fd1c5;--warn:#f6ad55}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 Inter,system-ui,sans-serif;display:flex;justify-content:center}
+  main{width:100%;max-width:720px;padding:40px 24px}
+  h1{margin:0 0 4px;font-weight:800;letter-spacing:.04em;font-size:22px}
+  h1 span{color:var(--accent)}
+  .updated{color:var(--dim);font:12px 'JetBrains Mono',monospace;margin-bottom:24px;min-height:18px}
+  .total{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin-bottom:16px}
+  .total .k{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+  .total .v{font:600 44px 'JetBrains Mono',monospace;color:var(--accent);margin-top:2px}
+  .list{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 22px}
+  .row{padding:14px 0;border-top:1px solid var(--line)}
+  .row:first-child{border-top:0}
+  .head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  .head a{color:var(--text);text-decoration:none;font-weight:600}
+  .head a:hover{color:var(--accent)}
+  .n{font:600 17px 'JetBrains Mono',monospace;color:var(--accent);white-space:nowrap}
+  .n.err{color:var(--warn);font-size:12px;font-weight:400}
+  .bar{height:4px;background:#0d1117;border-radius:2px;margin-top:8px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .6s ease}
+</style>
+</head>
+<body>
+<main>
+  <h1>DOWNLOAD <span>STATS</span></h1>
+  <div class="updated" id="updated">Loading…</div>
+  <div class="total"><div class="k">Total downloads</div><div class="v" id="total">–</div></div>
+  <div class="list" id="list"></div>
+</main>
+<script>
+// repo, extra downloads to add on top of GitHub's count
+const REPOS = [
+  ['tijayfly/gt64_recomp', 0],
+  ['tijayfly/dream-raiders-pc', 0],
+  ['tijayfly/depot-plarail-tracker', 0],
+  ['tijayfly/paddock-diecast-tracker', 0],
+  ['tijayfly/hangar-gunpla-tracker', 0],
+  ['tijayfly/mi_n64_exe', 55],
+];
+const REFRESH_MINUTES = 10;
+
+const fmt = n => n.toLocaleString('en-GB');
+const last = {};
+
+async function repoTotal(repo){
+  let sum = 0;
+  for (let page = 1; page < 20; page++){
+    const r = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}`,
+      {headers: {Accept: 'application/vnd.github+json'}});
+    if (!r.ok) throw new Error(r.status === 403 || r.status === 429 ? 'rate limited' : 'error ' + r.status);
+    const rels = await r.json();
+    for (const rel of rels) for (const a of rel.assets) sum += a.download_count;
+    if (rels.length < 100) break;
+  }
+  return sum;
+}
+
+async function refresh(){
+  const results = await Promise.all(REPOS.map(async ([repo, extra]) => {
+    try { const n = (await repoTotal(repo)) + extra; last[repo] = n; return {repo, n}; }
+    catch (e) { return {repo, n: last[repo], err: e.message}; }  // keep previous value if a refresh fails
+  }));
+  const total = results.reduce((a, r) => a + (r.n || 0), 0);
+  const max = Math.max(1, ...results.map(r => r.n || 0));
+  results.sort((a, b) => (b.n || 0) - (a.n || 0));
+  document.getElementById('total').textContent = fmt(total);
+  document.getElementById('list').innerHTML = results.map(r => `
+    <div class="row">
+      <div class="head">
+        <a href="https://github.com/${r.repo}/releases" target="_blank" rel="noopener">${r.repo.split('/')[1]}</a>
+        ${r.n != null ? `<span class="n">${fmt(r.n)}</span>` : `<span class="n err">${r.err}</span>`}
+      </div>
+      <div class="bar"><i data-w="${(r.n || 0) / max * 100}"></i></div>
+    </div>`).join('');
+  requestAnimationFrame(() => document.querySelectorAll('.bar i').forEach(i => i.style.width = i.dataset.w + '%'));
+  const failed = results.some(r => r.err);
+  document.getElementById('updated').textContent =
+    `Updated ${new Date().toLocaleTimeString('en-GB')} · refreshes every ${REFRESH_MINUTES} min` + (failed ? ' · some repos failed to load' : '');
+}
+
+refresh();
+setInterval(refresh, REFRESH_MINUTES * 60 * 1000);
+</script>
+</body>
+</html>
