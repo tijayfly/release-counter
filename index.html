@@ -37,14 +37,12 @@
   <div class="list" id="list"></div>
 </main>
 <script>
-// repo, extra downloads to add on top of GitHub's count
-const REPOS = [
-  ['tijayfly/gt64_recomp', 0],
-  ['tijayfly/dream-raiders-pc', 0],
-  ['tijayfly/depot-plarail-tracker', 0],
-  ['tijayfly/paddock-diecast-tracker', 0],
-  ['tijayfly/hangar-gunpla-tracker', 0],
-  ['tijayfly/mi_n64_exe', 55],
+// row name, repos summed into that row, extra downloads added on top of GitHub's count
+const ROWS = [
+  ['gt64_recomp', ['tijayfly/gt64_recomp'], 0],
+  ['dream-raiders-pc', ['tijayfly/dream-raiders-pc'], 0],
+  ['collection-trackers', ['tijayfly/depot-plarail-tracker', 'tijayfly/paddock-diecast-tracker', 'tijayfly/hangar-gunpla-tracker'], 0],
+  ['mi_n64_exe', ['tijayfly/mi_n64_exe'], 55],
 ];
 const REFRESH_MINUTES = 10;
 
@@ -65,9 +63,13 @@ async function repoTotal(repo){
 }
 
 async function refresh(){
-  const results = await Promise.all(REPOS.map(async ([repo, extra]) => {
-    try { const n = (await repoTotal(repo)) + extra; last[repo] = n; return {repo, n}; }
-    catch (e) { return {repo, n: last[repo], err: e.message}; }  // keep previous value if a refresh fails
+  const results = await Promise.all(ROWS.map(async ([name, repos, extra]) => {
+    const link = repos.length === 1 ? `https://github.com/${repos[0]}/releases` : null;
+    try {
+      const counts = await Promise.all(repos.map(repoTotal));
+      const n = counts.reduce((a, c) => a + c, 0) + extra; last[name] = n; return {name, link, n};
+    }
+    catch (e) { return {name, link, n: last[name], err: e.message}; }  // keep previous value if a refresh fails
   }));
   const total = results.reduce((a, r) => a + (r.n || 0), 0);
   const max = Math.max(1, ...results.map(r => r.n || 0));
@@ -76,7 +78,7 @@ async function refresh(){
   document.getElementById('list').innerHTML = results.map(r => `
     <div class="row">
       <div class="head">
-        <a href="https://github.com/${r.repo}/releases" target="_blank" rel="noopener">${r.repo.split('/')[1]}</a>
+        ${r.link ? `<a href="${r.link}" target="_blank" rel="noopener">${r.name}</a>` : `<span style="font-weight:600">${r.name}</span>`}
         ${r.n != null ? `<span class="n">${fmt(r.n)}</span>` : `<span class="n err">${r.err}</span>`}
       </div>
       <div class="bar"><i data-w="${(r.n || 0) / max * 100}"></i></div>
